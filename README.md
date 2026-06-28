@@ -1,4 +1,4 @@
-# crypt-manage – OpenWrt LUKS Krypto-Manager
+# crypto-manage – OpenWrt LUKS Krypto-Manager
 
 Ein schlankes, POSIX-konformes Shell-Skript für **OpenWrt** (BusyBox), das das automatische Öffnen, Einhängen (Mounten), Aushängen (Unmounten) und Schließen von LUKS-verschlüsselten Festplatten und Containern orchestriert. 
 

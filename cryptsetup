@@ -1,0 +1,2 @@
+config cryptsetup 'openWRT_save'
+        option device '/dev/sda1'

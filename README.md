@@ -1,14 +1,12 @@
 # crypto-manage – OpenWrt LUKS Crypto Manager
 
-A lightweight, POSIX-compliant shell script for **OpenWrt** (BusyBox) that orchestrates the automatic opening, mounting, unmounting, and closing of LUKS-encrypted hard drives and containers. 
+A lightweight, POSIX-compliant shell script for **OpenWrt** (BusyBox) that orchestrates the automatic opening, mounting, unmounting, and closing of LUKS-encrypted hard drives and containers.
 
-The script reads the configuration natively from the OpenWrt system (`UCI`) and features built-in data loss protection via process blockade checking (`fuser`) as well as a simulated dry-run mode (`Dry-Run`).
+The script reads the configuration natively from the OpenWrt system (`UCI`) and features built-in data loss protection via process blockade checking (`fuser`) as well as a simulated dry-run mode (`Dry-Run`)
 
 ---
-
 ## 1) Introduction & Concept
 
-### Where does the idea come from?
 OpenWrt provides excellent crypto support via packages like `cryptsetup`, but by default lacks an automated, dynamic system to cleanly manage encrypted hard drives during runtime via scripts. Manually triggering `cryptsetup open`, creating mount points, mounting via the correct device mapping, and later closing cleanly (without destroying open file handles) is error-prone and cumbersome.
 
 `crypt-manage` closes this gap. It acts as an intelligent link between OpenWrt's configuration interface (UCI) and the Linux system tools. 
@@ -23,32 +21,21 @@ OpenWrt provides excellent crypto support via packages like `cryptsetup`, but by
 ### System Dependencies and USB Support
 To enable your OpenWrt router to detect, encrypt, and mount USB storage media in the first place, the following packages must be installed.
 First, update the package lists:
-
 ```
 apk update
 ```
-
 Install the drivers for USB support and USB storage media (USB Mass Storage):
-
 ```
-====bash=====
 apk add kmod-usb-storage kmod-usb-storage-uas block-mount
 ```
-
 Install the required crypto packages for LUKS encryption:
-
 ```
-====bash=====
 apk add cryptsetup fuser kmod-crypto-xts
 ```
-
 Install the drivers for the desired filesystem (using ext4 as an example here):
-
 ```
-====bash=====
 apk add kmod-fs-ext4
 ```
-
 (Note: uci, mount, umount, and awk are part of BusyBox by default and are already present on the system).
 
 ### Basic Understanding (Important!)
@@ -56,62 +43,43 @@ This script is not intended to create a new encrypted hard drive. To ensure the 
 
 ### Quick Guide: Preparing a LUKS Disk Manually
 1. **Encrypt the hard drive (formatting):**
-   
 ```
-====bash=====
 cryptsetup luksFormat /dev/sda1
 ```
-
 2. **Open for testing:**
-
 ```
-====bash=====
 cryptsetup open /dev/sda1 mein_safe
 ```
-
 3. **Create a filesystem (e.g., ext4):**
-
 ```
-====bash=====
 mkfs.ext4 /dev/mapper/mein_safe
 ```
-
 4. **Close it again:**
-
 ```
-====bash=====
 cryptsetup close mein_safe
 ```
-
 ## 3) Documentation of the Implementation
 #### Flow & Functionality
 Read UCI: The script checks the OpenWrt configuration. If no specific name is passed, it automatically determines all configured crypto devices.
 
 #### Mode Switch:
-
 ##### open:
 Fetches the physical device from /etc/config/cryptsetup and the target path from /etc/config/fstab. Opens the LUKS container and mounts the filesystem.
-
 ##### close:
 Determines the current mount point. Checks via fuser if open files or processes are still blocking the disk. If everything is clear, it unmounts cleanly (umount) and closes the LUKS container.
 
 #### Resources and Configuration
 The script exclusively accesses the standard configurations of OpenWrt:
 
-##### 1. Crypto Mapping: /etc/config/cryptsetup
+##### 1. Crypto Mapping: /etc/config/cryptsetup (see exampe in files)
 This defines which UUID or which physical device belongs to which crypto name.
-
-====bash=====
 ```
 config cryptsetup 'backup_safe'
 option device '/dev/sda1'
 ```
-
-##### 2. Mount Mapping: /etc/config/fstab
+##### 2. Mount Mapping: /etc/config/fstab (see exampe in files)
 This sets the mount point for the decrypted device. The reference to /dev/mapper/<name> is crucial here.
-
 ```
-====bash=====
 config mount
 option target '/mnt/secure_storage'
 option device '/dev/mapper/backup_safe'
@@ -120,74 +88,48 @@ option enabled '1'
 
 ## 4) Installation
 Copy the script to your OpenWrt router, ideally to /usr/bin/ or /usr/sbin/:
-
 ```
-====bash=====
 vi /usr/bin/crypt-manage
 ```
-
 Paste the script content and save the file.
-
 Make the script executable:
-
 ```
-====bash=====
 chmod +x /usr/bin/crypt-manage
 ```
-
 ## 5) Examples of Invocations & Use Cases
 ### Usage
-
 ```
-====bash=====
 crypt-manage [ open | close ] [luks_name]* [go]
 ```
 
 ### Usecase 1: The Safety Test Run (Dry-Run)
 By default, the script does nothing but show you what it would do. Perfect for checking your UCI configuration in advance without any risk.
-
 ```
-====bash=====
 crypt-manage open
 ```
-
 Output:
-
 ```
-====bash=====
 Decrypting: backup_safe
 [Dry-Run] cryptsetup open /dev/sda1 backup_safe
 [Dry-Run] mount /dev/mapper/backup_safe /mnt/secure_storage
 ```
-
 ### Usecase 2: Live Opening and Mounting
 Append the word go to the end to actually execute the command. You will be prompted interactively for your LUKS passphrase.
-
 ```
-====bash=====
 crypt-manage open go
 ```
-
 ### Usecase 3: Target Open of a Specific Disk
 If you have multiple disks defined in the UCI but only want to open one specific disk:
-
 ```
-====bash=====
 crypt-manage open backup_safe go
 ```
-
 ### Usecase 4: Safe Closing (With fuser Protection)
 When you want to close the disk, the script checks in the background if read or write accesses are still taking place:
-
 ```
-====bash=====
 crypt-manage close go
 ```
-
 If a process (e.g., SSH or a Samba share) is still active in the directory, the script aborts and lists the culprits:
-
 ```
-====bash=====
 Locking: backup_safe
 ✗ Files on /mnt/secure_storage are locked/busy! Unmount aborted.
 PID USER       COMMAND
@@ -198,10 +140,9 @@ PID USER       COMMAND
 This project is licensed under the MIT License – see below for details.
 
 ```
-====bash=====
 MIT License
 
-Copyright (c) 2026 YOUR_NAME_OR_NICKNAME
+Copyright (c) 2026 Thilo Reski
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

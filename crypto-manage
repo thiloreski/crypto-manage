@@ -1,0 +1,102 @@
+#!/bin/sh
+
+DRY_RUN=1
+OPEN="open"
+CLOSE="close"
+OP="nd"
+
+if [ "$1" = "$OPEN" ]; then
+    OP=$OPEN
+elif [ "$1" = "$CLOSE" ]; then
+    OP=$CLOSE
+fi
+shift
+
+# ueberpruefen auf den "go"-Parameter fuer scharfen Lauf
+for last_arg in "$@"; do :; done
+
+if [ "$last_arg" = "go" ]; then
+    DRY_RUN=0
+    # Entferne das "go" aus der Argumentenliste für die Weiterverarbeitung
+    LIST=$(echo "$*" | sed 's/[[:space:]]*go$//')
+else
+    LIST="$*"
+fi
+
+# Hilfe anzeigen, wenn Parameter falsch
+if [ "$OP" = "nd" ]; then
+    echo "Verwendung: $0 [ open | close ] [luks_name]* [go]"
+    echo "Beispiel für Testlauf:  $0 open backup_safe"
+    echo "Beispiel für scharf:    $0 open backup_safe go"
+    exit 1
+fi
+
+# Wenn keine spezifische Platte uebergeben wurde, lies alle aus der OpenWrt-Konfiguration
+if [ -z "$LIST" ]; then
+    LIST=$(uci -q show cryptsetup | grep "=cryptsetup" | cut -d'.' -f2 | cut -d'=' -f1)
+fi
+
+# --- OPEN MODUS ---
+if [ "$OP" = "$OPEN" ]; then
+    echo "Entschlüssele: $LIST"
+    for i in $LIST; do
+        # Werte aus OpenWrt UCI holen
+        DEV=$(uci -q get cryptsetup.$i.device)
+        MOUNT_POINT=$(uci -q show fstab | grep "device='/dev/mapper/$i'" | cut -d'.' -f2)
+        TARGET=""
+        [ -n "$MOUNT_POINT" ] && TARGET=$(uci -q get fstab.$MOUNT_POINT.target)
+
+        if [ -z "$DEV" ]; then
+            echo "✗ $i ist nicht in /etc/config/cryptsetup konfiguriert!"
+            continue
+        fi
+
+        if [ "$DRY_RUN" = "0" ]; then
+            echo "-> Öffne LUKS-Gerät $i ($DEV)..."
+            cryptsetup open "$DEV" "$i"
+            
+            if [ -n "$TARGET" ]; then
+                echo "-> Mounte nach $TARGET..."
+                mkdir -p "$TARGET"
+                mount "/dev/mapper/$i" "$TARGET"
+                echo "✓ Erledigt."
+            else
+                echo "⚠ Kein automatischen Mountpoint in /etc/config/fstab für /dev/mapper/$i gefunden."
+            fi
+        else
+            echo "[Dry-Run] cryptsetup open $DEV $i"
+            [ -n "$TARGET" ] && echo "[Dry-Run] mount /dev/mapper/$i $TARGET"
+        fi
+    done
+fi
+
+# --- CLOSE MODUS ---
+if [ "$OP" = "$CLOSE" ]; then
+    echo "Sperre: $LIST"
+    for i in $LIST; do
+        TARGET=$(mount | grep "/dev/mapper/$i" | awk '{print $3}')
+        
+        if [ -n "$TARGET" ]; then
+            # Prüfen ob Dateien geoeffnet sind via standard-busybox 'fuser'
+            if fuser -s "$TARGET" 2>/dev/null; then
+                echo "✗ Dateien auf $TARGET blockiert! Unmount abgebrochen."
+                fuser -v "$TARGET"
+                continue
+            fi
+
+            if [ "$DRY_RUN" = "0" ]; then
+                echo "-> Unmounte $TARGET..."
+                umount "$TARGET"
+            else
+                echo "[Dry-Run] umount $TARGET"
+            fi
+        fi
+
+        if [ "$DRY_RUN" = "0" ]; then
+            echo "-> Schliesse Krypto-Container $i..."
+            cryptsetup close "$i"
+        else
+            echo "[Dry-Run] cryptsetup close $i"
+        fi
+    done
+fi

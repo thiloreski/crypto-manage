@@ -11,7 +11,6 @@ Das Skript liest die Konfiguration nativ aus dem OpenWrt-System (`UCI`) und verf
 ### Woher kommt die Idee?
 OpenWrt bietet über Pakete wie `cryptsetup` eine hervorragende Krypto-Unterstützung, besitzt jedoch standardmäßig kein automatisiertes, dynamisches System, um verschlüsselte Festplatten im laufenden Betrieb sauber per Skript zu verwalten. Das manuelle Abfeuern von `cryptsetup open`, das Erstellen von Mountpoints, das Einhängen über das richtige Device-Mapping und das spätere saubere Schließen (ohne offene Dateihandles zu zerstören) ist fehleranfällig und unhandlich.
 
-### Was soll das Ganze?
 `crypt-manage` schließt diese Lücke. Es fungiert als intelligentes Bindeglied zwischen OpenWrts Konfigurations-Schnittstelle (UCI) und den Linux-Systemwerkzeugen. 
 
 **Die Kernvorteile:**

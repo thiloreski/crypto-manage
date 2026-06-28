@@ -1,0 +1,14 @@
+# --- System- und OS-Müll (Wichtig!) ---
+.DS_Store
+Thumbs.db
+.directory
+
+# --- Editor- und IDE-spezifische Dateien ---
+.vscode/
+.idea/
+*.swp
+*~
+
+# --- Projektspezifische temporäre Dateien ---
+*.log
+*.tmp

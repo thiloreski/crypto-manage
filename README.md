@@ -1,98 +1,117 @@
-# crypto-manage – OpenWrt LUKS Krypto-Manager
+# crypto-manage – OpenWrt LUKS Crypto Manager
 
-Ein schlankes, POSIX-konformes Shell-Skript für **OpenWrt** (BusyBox), das das automatische Öffnen, Einhängen (Mounten), Aushängen (Unmounten) und Schließen von LUKS-verschlüsselten Festplatten und Containern orchestriert. 
+A lightweight, POSIX-compliant shell script for **OpenWrt** (BusyBox) that orchestrates the automatic opening, mounting, unmounting, and closing of LUKS-encrypted hard drives and containers. 
 
-Das Skript liest die Konfiguration nativ aus dem OpenWrt-System (`UCI`) und verfügt über einen integrierten Schutz vor Datenverlust durch Blockade-Prüfung (`fuser`) sowie einen simulierten Testlauf-Modus (`Dry-Run`).
+The script reads the configuration natively from the OpenWrt system (`UCI`) and features built-in data loss protection via process blockade checking (`fuser`) as well as a simulated dry-run mode (`Dry-Run`).
 
 ---
 
-## 1) Einführung & Konzept
+## 1) Introduction & Concept
 
-### Woher kommt die Idee?
-OpenWrt bietet über Pakete wie `cryptsetup` eine hervorragende Krypto-Unterstützung, besitzt jedoch standardmäßig kein automatisiertes, dynamisches System, um verschlüsselte Festplatten im laufenden Betrieb sauber per Skript zu verwalten. Das manuelle Abfeuern von `cryptsetup open`, das Erstellen von Mountpoints, das Einhängen über das richtige Device-Mapping und das spätere saubere Schließen (ohne offene Dateihandles zu zerstören) ist fehleranfällig und unhandlich.
+### Where does the idea come from?
+OpenWrt provides excellent crypto support via packages like `cryptsetup`, but by default lacks an automated, dynamic system to cleanly manage encrypted hard drives during runtime via scripts. Manually triggering `cryptsetup open`, creating mount points, mounting via the correct device mapping, and later closing cleanly (without destroying open file handles) is error-prone and cumbersome.
 
-`crypt-manage` schließt diese Lücke. Es fungiert als intelligentes Bindeglied zwischen OpenWrts Konfigurations-Schnittstelle (UCI) und den Linux-Systemwerkzeugen. 
+`crypt-manage` closes this gap. It acts as an intelligent link between OpenWrt's configuration interface (UCI) and the Linux system tools. 
 
-**Die Kernvorteile:**
-* **Zentralisiert:** Es nutzt die nativen OpenWrt-Konfigurationsdateien (`/etc/config/cryptsetup` und `/etc/config/fstab`). Keine redundanten Pfade im Skript.
-* **Sicher (Safety First):** Vor dem Schließen einer verschlüsselten Partition wird geprüft, ob noch Prozesse auf die Platte zugreifen. Ein harter Datenverlust wird so verhindert.
-* **Trockenübung (Dry-Run):** Jeder Befehl wird standardmäßig nur *simuliert*. Erst durch das explizite Anhängen des Parameters `go` wird die Aktion scharf geschaltet.
+**The core advantages:**
+* **Centralized:** It uses the native OpenWrt configuration files (`/etc/config/cryptsetup` and `/etc/config/fstab`). No redundant paths in the script.
+* **Safe (Safety First):** Before closing an encrypted partition, it checks whether processes are still accessing the disk. This prevents hard data loss.
+* **Dry-Run:** Every command is only *simulated* by default. The action is only armed by explicitly appending the `go` parameter.
 ---
 
-## 2) Voraussetzungen
-### System-Abhängigkeiten und USB-Unterstützung
-Damit dein OpenWrt-Router überhaupt USB-Speichermedien erkennt, verschlüsseln und einbinden kann, müssen die folgenden Pakete installiert sein.
-Aktualisiere zuerst die Paketlisten:
+## 2) Prerequisites
+### System Dependencies and USB Support
+To enable your OpenWrt router to detect, encrypt, and mount USB storage media in the first place, the following packages must be installed.
+First, update the package lists:
+
 ```
 apk update
 ```
-Installiere die Treiber für USB-Unterstützung und USB-Speichermedien (USB-Mass-Storage):
+
+Install the drivers for USB support and USB storage media (USB Mass Storage):
+
 ```
+====bash=====
 apk add kmod-usb-storage kmod-usb-storage-uas block-mount
 ```
-Installiere die benötigten Krypto-Pakete für die LUKS-Verschlüsselung:
+
+Install the required crypto packages for LUKS encryption:
+
 ```
+====bash=====
 apk add cryptsetup fuser kmod-crypto-xts
 ```
-Installiere die Treiber für das gewünschte Dateisystem (hier am Beispiel von ext4):
+
+Install the drivers for the desired filesystem (using ext4 as an example here):
+
 ```
+====bash=====
 apk add kmod-fs-ext4
 ```
-(Hinweis: uci, mount, umount und awk sind standardmäßig Teil der BusyBox und bereits auf dem System vorhanden).
 
-### Das grundlegende Verständnis (Wichtig!)
-Dieses Skript dient nicht dazu, eine verschlüsselte Festplatte neu zu erstellen. Um die Sicherheit deiner Daten zu gewährleisten, musst du das Krypto-Dateisystem vorab einmalig von Hand einrichten. Dies stellt sicher, dass du den Verschlüsselungs- und Schlüsselprozess (Passphrase) verstanden hast.
+(Note: uci, mount, umount, and awk are part of BusyBox by default and are already present on the system).
 
-### Kurzanleitung: LUKS-Platte manuell vorbereiten
-1. **Festplatte verschlüsseln (Formatieren):**
+### Basic Understanding (Important!)
+This script is not intended to create a new encrypted hard drive. To ensure the security of your data, you must manually set up the crypto filesystem once in advance. This ensures that you understand the encryption and keying process (passphrase).
+
+### Quick Guide: Preparing a LUKS Disk Manually
+1. **Encrypt the hard drive (formatting):**
    
 ```
+====bash=====
 cryptsetup luksFormat /dev/sda1
 ```
-2. **Testweise öffnen:**
+
+2. **Open for testing:**
 
 ```
+====bash=====
 cryptsetup open /dev/sda1 mein_safe
 ```
 
-3. **Dateisystem erstellen (z. B. ext4):**
+3. **Create a filesystem (e.g., ext4):**
 
 ```
+====bash=====
 mkfs.ext4 /dev/mapper/mein_safe
 ```
-4. **Wieder schließen:**
+
+4. **Close it again:**
 
 ```
+====bash=====
 cryptsetup close mein_safe
 ```
 
-## 3) Dokumentation der Implementierung
-#### Ablauf & Funktionsweise
-UCI auslesen: Das Skript prüft die OpenWrt-Konfiguration. Wird kein spezifischer Name übergeben, ermittelt es automatisch alle konfigurierten Krypto-Geräte.
+## 3) Documentation of the Implementation
+#### Flow & Functionality
+Read UCI: The script checks the OpenWrt configuration. If no specific name is passed, it automatically determines all configured crypto devices.
 
-#### Modus-Weiche:
+#### Mode Switch:
 
 ##### open:
-Holt sich das physische Device aus /etc/config/cryptsetup und den Ziel-Pfad aus /etc/config/fstab. Öffnet den LUKS-Container und bindet das Dateisystem ein.
+Fetches the physical device from /etc/config/cryptsetup and the target path from /etc/config/fstab. Opens the LUKS container and mounts the filesystem.
 
 ##### close:
-Ermittelt den aktuellen Mountpoint. Prüft via fuser, ob noch offene Dateien oder Prozesse die Platte blockieren. Wenn alles frei ist, wird sauber ausgehängt (umount) und der LUKS-Container geschlossen.
+Determines the current mount point. Checks via fuser if open files or processes are still blocking the disk. If everything is clear, it unmounts cleanly (umount) and closes the LUKS container.
 
-#### Ressourcen und Konfiguration
-Das Skript greift ausschließlich auf die Standard-Konfigurationen von OpenWrt zu:
+#### Resources and Configuration
+The script exclusively accesses the standard configurations of OpenWrt:
 
-##### 1. Krypto-Zuordnung: /etc/config/cryptsetup
-Hier wird definiert, welche UUID oder welches physische Device zu welchem Krypto-Namen gehört.
+##### 1. Crypto Mapping: /etc/config/cryptsetup
+This defines which UUID or which physical device belongs to which crypto name.
 
+====bash=====
 ```
 config cryptsetup 'backup_safe'
 option device '/dev/sda1'
 ```
 
-##### 2. Mount-Zuordnung: /etc/config/fstab
-Hier wird der Mountpoint für das entschlüsselte Gerät festgelegt. Wichtig ist hierbei der Verweis auf /dev/mapper/<name>.
+##### 2. Mount Mapping: /etc/config/fstab
+This sets the mount point for the decrypted device. The reference to /dev/mapper/<name> is crucial here.
 
 ```
+====bash=====
 config mount
 option target '/mnt/secure_storage'
 option device '/dev/mapper/backup_safe'
@@ -100,70 +119,89 @@ option enabled '1'
 ```
 
 ## 4) Installation
-Kopiere das Skript auf deinen OpenWrt-Router, idealerweise nach /usr/bin/ oder /usr/sbin/:
+Copy the script to your OpenWrt router, ideally to /usr/bin/ or /usr/sbin/:
 
 ```
+====bash=====
 vi /usr/bin/crypt-manage
 ```
 
-Füge den Skriptinhalt ein und speichere die Datei.
+Paste the script content and save the file.
 
-Mache das Skript ausführbar:
+Make the script executable:
 
 ```
+====bash=====
 chmod +x /usr/bin/crypt-manage
 ```
 
-## 5) Beispiele für Aufrufe & Use Cases
-### Verwendung
-```bash
+## 5) Examples of Invocations & Use Cases
+### Usage
+
+```
+====bash=====
 crypt-manage [ open | close ] [luks_name]* [go]
 ```
-### Usecase 1: Der Sicherheits-Testlauf (Dry-Run)
-Standardmäßig tut das Skript nichts, sondern zeigt dir nur, was es tun würde. Perfekt, um deine UCI-Konfiguration vorab risikofrei zu prüfen.
+
+### Usecase 1: The Safety Test Run (Dry-Run)
+By default, the script does nothing but show you what it would do. Perfect for checking your UCI configuration in advance without any risk.
 
 ```
+====bash=====
 crypt-manage open
 ```
-Ausgabe:
+
+Output:
 
 ```
-Entschlüssele: backup_safe
+====bash=====
+Decrypting: backup_safe
 [Dry-Run] cryptsetup open /dev/sda1 backup_safe
 [Dry-Run] mount /dev/mapper/backup_safe /mnt/secure_storage
 ```
-### Usecase 2: Scharfes Öffnen und Einbinden
-Füge das Wort go ans Ende an, um den Befehl tatsächlich auszuführen. Du wirst nun interaktiv nach deinem LUKS-Passwort gefragt.
+
+### Usecase 2: Live Opening and Mounting
+Append the word go to the end to actually execute the command. You will be prompted interactively for your LUKS passphrase.
 
 ```
+====bash=====
 crypt-manage open go
 ```
-### Usecase 3: Gezieltes Öffnen einer bestimmten Platte
-Hast du mehrere Platten in der UCI definiert, möchtest aber nur eine ganz bestimmte öffnen:
+
+### Usecase 3: Target Open of a Specific Disk
+If you have multiple disks defined in the UCI but only want to open one specific disk:
 
 ```
+====bash=====
 crypt-manage open backup_safe go
 ```
-### Usecase 4: Sicheres Schließen (Mit fuser-Schutz)
-Wenn du die Platte schließen möchtest, prüft das Skript im Hintergrund, ob noch Schreib- oder Lesezugriffe stattfinden:
 
-```bash
+### Usecase 4: Safe Closing (With fuser Protection)
+When you want to close the disk, the script checks in the background if read or write accesses are still taking place:
+
+```
+====bash=====
 crypt-manage close go
 ```
-Falls noch ein Prozess (z.B. SSH oder ein Samba-Share) im Verzeichnis aktiv ist, bricht das Skript ab und listet die Übeltäter auf:
 
-```bash
-Sperre: backup_safe
-✗ Dateien auf /mnt/secure_storage blockiert! Unmount abgebrochen.
+If a process (e.g., SSH or a Samba share) is still active in the directory, the script aborts and lists the culprits:
+
+```
+====bash=====
+Locking: backup_safe
+✗ Files on /mnt/secure_storage are locked/busy! Unmount aborted.
 PID USER       COMMAND
 1234 root       /bin/sh
 ```
-## 6) Lizenz
-Dieses Projekt ist unter der MIT-Lizenz lizenziert – siehe unten für Details.
+
+## 6) License
+This project is licensed under the MIT License – see below for details.
+
 ```
+====bash=====
 MIT License
 
-Copyright (c) 2026 DEIN_NAME_ODER_NICKNAME
+Copyright (c) 2026 YOUR_NAME_OR_NICKNAME
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -184,4 +222,4 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-Mit KI-Unterstützung entwickelt und krisenfest geschliffen.
+Developed with AI support and refined to be crisis-proof.

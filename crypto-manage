@@ -28,6 +28,8 @@ if [ "$OP" = "nd" ]; then
     echo "Usage: $0 [ open | close ] [luks_name]* [go]"
     echo "Example for dry-run:  $0 open backup_safe"
     echo "Example for live-run: $0 open backup_safe go"
+    echo "crypto devices:"                             
+    uci show cryptsetup                                
     exit 1
 fi
 
@@ -35,6 +37,11 @@ fi
 if [ -z "$LIST" ]; then
     LIST=$(uci -q show cryptsetup | grep "=cryptsetup" | cut -d'.' -f2 | cut -d'=' -f1)
 fi
+# Still no device given?                                                               
+if [ -z "$LIST" ]; then                                                                
+   echo "No crypto device fould .. exiting"                                            
+   exit                                                                                
+fi                                                                                     
 
 # --- OPEN MODE ---
 if [ "$OP" = "$OPEN" ]; then
